@@ -59,9 +59,10 @@ void CSession::Close()
 }
 
 // CIOCPServer Implementation
-CIOCPServer::CIOCPServer(int port, int maxClients)
+CIOCPServer::CIOCPServer(int port, int maxClients, ServerArchitectureType type)
     : _port(port)
     , _maxClients(maxClients)
+    , _architectureType(type)
     , _running(false)
     , _sessionIdCounter(0)
     , _listenSocket(INVALID_SOCKET)
@@ -161,10 +162,21 @@ void CIOCPServer::Start()
     // Accept 스레드 생성
     _acceptThread = std::thread(&CIOCPServer::AcceptThread, this);
 
-    // 명령 처리 스레드 생성
-    _commandThread = std::thread(&CIOCPServer::CommandProcessThread, this);
+    // 컨텐츠 스레드 생성 (Centralized 모드에만 필요)
+    if (_architectureType == ServerArchitectureType::Centralized)
+    {
+        _commandThread = std::thread(&CIOCPServer::CommandProcessThread, this);
+    }
 
-    std::cout << "[Network] Server started with " << threadCount << " worker threads" << std::endl;
+    std::cout << "[Network] Server started with " << threadCount << " worker threads (Mode: ";
+    
+    switch (_architectureType) 
+    {
+    case ServerArchitectureType::Centralized: std::cout << "Centralized"; break;
+    case ServerArchitectureType::Partitioned: std::cout << "Partitioned"; break;
+    case ServerArchitectureType::UnifiedStrand: std::cout << "UnifiedStrand"; break;
+    }
+    std::cout << ")" << std::endl;
 }
 
 // 즉시 RST 전송(강제 종료)
@@ -230,6 +242,11 @@ void CIOCPServer::Disconnect()
         _acceptThread.join();
     }
 
+    if (_commandThread.joinable())
+    {
+        _commandThread.join();
+    }
+
     if (_iocpHandle != NULL)
     {
         CloseHandle(_iocpHandle);
@@ -274,9 +291,27 @@ void CIOCPServer::ProcessAccept(SOCKET clientSocket)
         return;
     }
 
-	// 세션 추가
+    // 세션 추가
     AddSession(session);
-    PushNetworkEvent(NetworkEvent(NetworkEvent::Type::CONNECTED, sessionId));
+
+
+
+    // 컨텐츠쪽 전달 
+    switch (_architectureType)
+    {
+    case ServerArchitectureType::Centralized: // 큐에 넣어서 별도 스레드로 전달
+        PushNetworkEvent(NetworkEvent(NetworkEvent::Type::CONNECTED, sessionId));
+		break;
+
+    case ServerArchitectureType::UnifiedStrand: // 직접 처리 (하위 클래스에서 오버라이드된 메서드 호출)
+        OnClientConnected(sessionId);
+		break;
+
+	default:
+        break;
+    }
+
+
 
     std::cout << "Client connected - SessionId: " << sessionId << std::endl;
 
@@ -346,16 +381,31 @@ void CIOCPServer::WorkerThread()
     }
 }
 
+// Recv 완료 통지
 void CIOCPServer::ProcessRecv(CSession* session, DWORD bytesTransferred)
 {
     auto recvOverlapped = session->GetRecvOverlapped();
 
-    // 받은 데이터 처리 (에코 테스트)
     std::cout << "Received " << bytesTransferred << " bytes from SessionId: "
         << session->GetSessionId() << std::endl;
 
-    // 에코백
-    RequestSendPacket(session->GetSessionId(), recvOverlapped->buffer, bytesTransferred);
+
+    // 컨텐츠쪽 전달
+    switch (_architectureType)
+    {
+        case ServerArchitectureType::Centralized: // 큐에 넣어서 별도 스레드로 전달
+            PushNetworkEvent(NetworkEvent(NetworkEvent::Type::RECEIVED, 
+                session->GetSessionId(), recvOverlapped->buffer, bytesTransferred));
+			break;
+
+		case ServerArchitectureType::UnifiedStrand: // 직접 처리 (하위 클래스에서 오버라이드된 메서드 호출)
+            OnDataReceived(session->GetSessionId(), recvOverlapped->buffer, bytesTransferred);
+            break;
+
+        default: 
+            break;
+    }
+
 
     // 다음 Recv 요청
     ZeroMemory(&recvOverlapped->overlapped, sizeof(OVERLAPPED));
@@ -375,11 +425,11 @@ void CIOCPServer::ProcessRecv(CSession* session, DWORD bytesTransferred)
     }
 }
 
+// Send 완료 통지
 void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
 {
     // Send 완료 처리
-    std::cout << "Sent " << bytesTransferred << " bytes to SessionId: "
-        << session->GetSessionId() << std::endl;
+	// 할일 없음
 }
 
 void CIOCPServer::RequestSendPacket(int64_t sessionId, const char* data, int length)
@@ -421,6 +471,16 @@ void CIOCPServer::RequestDisconnectSession(int64_t sessionId)
     auto session = GetSession(sessionId);
     if (session)
     {
+		// 컨텐츠 쪽 전달
+        if (_architectureType == ServerArchitectureType::Centralized)
+        {
+            PushNetworkEvent(NetworkEvent(NetworkEvent::Type::DISCONNECTED, sessionId));
+        }
+        else // DIRECT_LOGIC
+        {
+            OnClientDisconnected(sessionId);
+        }
+
         session->Close();
         RemoveSession(sessionId);
         std::cout << "Client disconnected - SessionId: " << sessionId << std::endl;
@@ -481,4 +541,25 @@ void CIOCPServer::CommandProcessThread()
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
+}
+
+
+// 다이렉트 모드용 기본 구현 (하위 클래스에서 오버라이드 가능)
+// (UnifiedStrand)
+void CIOCPServer::OnClientConnected(int64_t sessionId)
+{
+    // 기본 동작: 에코 테스트용 환영 메시지
+    std::string welcomeMsg = "Welcome! (Direct mode)";
+    RequestSendPacket(sessionId, welcomeMsg.c_str(), static_cast<int>(welcomeMsg.size()));
+}
+
+void CIOCPServer::OnClientDisconnected(int64_t sessionId)
+{
+    // 기본 동작: 아무것도 하지 않음
+}
+
+void CIOCPServer::OnDataReceived(int64_t sessionId, const char* data, size_t length)
+{
+    // 기본 동작: 에코백
+    RequestSendPacket(sessionId, data, static_cast<int>(length));
 }

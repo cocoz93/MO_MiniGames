@@ -7,8 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 
-#include "IOCPServer.h"
-#include "GameServer.h"
+#include "CentralizedServer.h"
 
 std::atomic<bool> running{true};
 std::mutex mtx;
@@ -27,25 +26,13 @@ int main()
     constexpr int MAX_CLIENTS = 1000;
 
     std::cout << "=== IOCP Mini Game Server ===" << std::endl;
-    std::cout << "Port: " << PORT << std::endl;
+    std::cout << "Port: " << PORT << std::endl; 
     std::cout << "Max Clients: " << MAX_CLIENTS << std::endl;
 
-    // 네트워크 레이어 생성
-    auto networkServer = std::make_shared<CIOCPServer>(PORT, MAX_CLIENTS);
-
-    if (!networkServer->Initialize())
-    {
-        std::cerr << "Failed to initialize network server" << std::endl;
-        return 1;
-    }
-
-    std::cout << "Network server initialized successfully" << std::endl;
-
-    // 게임 로직 레이어 생성
-    auto gameServer = std::make_unique<CGameServer>(networkServer);
+    // 중앙 집중형 게임 서버만 생성 (내부에서 네트워크 레이어 자동 생성)
+    auto gameServer = std::make_unique<CCentralizedServer>(PORT, MAX_CLIENTS);
 
     // 서버 시작
-    networkServer->Start();
     gameServer->Start();
 
     // main 스레드는 condition_variable로 대기
@@ -56,7 +43,6 @@ int main()
 
     // 서버 종료
     gameServer->Stop();
-    networkServer->Disconnect();
 
     std::cout << "Server shutdown complete" << std::endl;
     return 0;

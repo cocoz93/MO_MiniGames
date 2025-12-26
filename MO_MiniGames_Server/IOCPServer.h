@@ -23,6 +23,14 @@ enum class IOOperation
     ACCEPT
 };
 
+// 서버 아키텍처 타입
+enum class ServerArchitectureType
+{
+    Centralized,    // 중앙 집중형 - 별도 스레드에서 이벤트 처리
+    Partitioned,    // 분산형 - 여러 스레드/큐로 분리 처리
+    UnifiedStrand   // 통합 스트랜드 - IOCP 워커가 게임 로직까지 직접 처리
+};
+
 struct OverlappedEx
 {
     OVERLAPPED overlapped;
@@ -158,7 +166,7 @@ private:
 class CIOCPServer
 {
 public:
-    explicit CIOCPServer(int port, int maxClients);
+    explicit CIOCPServer(int port, int maxClients, ServerArchitectureType type = ServerArchitectureType::Centralized);
     virtual ~CIOCPServer();
 
     bool Initialize();
@@ -167,18 +175,25 @@ public:
 
     // 게임 로직 레이어가 사용할 인터페이스
     void RequestSendPacket(int64_t sessionId, const char* data, int length);
-    void RequestDisconnectSession(int64_t sessionId);  // ← int에서 int64_t로 수정
+    void RequestDisconnectSession(int64_t sessionId);
     void RequestBroadcastPacket(const char* data, int length);
 
-private:
-    // 게임 로직으로 이벤트 전달
-    void PushNetworkEvent(NetworkEvent&& event);
-
-public:
-    // 게임 로직 레이어로 전달할 이벤트 가져오기
+    // 게임 로직 레이어로 전달할 이벤트 가져오기 (QUEUE_BASED 모드용)
     bool PopNetworkEvent(NetworkEvent& event);
 
+    // 처리 방식 타입 가져오기
+    ServerArchitectureType GetArchitectureType() const;
+
+protected:
+    // 다이렉트 모드용(UnifiedStrand) - 하위 클래스에서 오버라이드
+    virtual void OnClientConnected(int64_t sessionId);
+    virtual void OnClientDisconnected(int64_t sessionId);
+    virtual void OnDataReceived(int64_t sessionId, const char* data, size_t length);
+
 private:
+    // 게임 로직으로 이벤트 전달 (QUEUE_BASED 모드용)
+    void PushNetworkEvent(NetworkEvent&& event);
+
     void WorkerThread();
     void AcceptThread();
     void CommandProcessThread();
@@ -194,12 +209,10 @@ private:
     void AddSession(std::shared_ptr<CSession> session);
     void RemoveSession(int64_t sessionId);
 
-
-
-
 private:
     int _port;
     int _maxClients;
+    ServerArchitectureType _architectureType;
     std::atomic<bool> _running;
     std::atomic<int64_t> _sessionIdCounter;
 
@@ -213,7 +226,7 @@ private:
     std::unordered_map<int64_t, std::shared_ptr<CSession>> _sessions;
     std::mutex _sessionMutex;
 
-    // 레이어 간 통신 큐
+    // 레이어 간 통신 큐 (QUEUE_BASED 모드용)
     ThreadSafeQueue<NetworkEvent> _eventQueue;    // 네트워크 -> 게임 로직
     ThreadSafeQueue<NetworkCommand> _commandQueue; // 게임 로직 -> 네트워크
 };
