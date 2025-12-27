@@ -432,7 +432,8 @@ void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
 	// 할일 없음
 }
 
-void CIOCPServer::RequestSendPacket(int64_t sessionId, const char* data, int length)
+// Player의 GetSessionId()를 사용하여 네트워크 계층에 전달
+void CIOCPServer::RequestSendMsg(int64_t sessionId, const char* data, int length)
 {
     auto session = GetSession(sessionId);
     if (!session || !session->IsConnected())
@@ -457,12 +458,12 @@ void CIOCPServer::RequestSendPacket(int64_t sessionId, const char* data, int len
     }
 }
 
-void CIOCPServer::RequestBroadcastPacket(const char* data, int length)
+void CIOCPServer::RequestBroadcastMsg(const char* data, int length)
 {
     std::lock_guard<std::mutex> lock(_sessionMutex);
     for (auto& pair : _sessions)
     {
-        RequestSendPacket(pair.first, data, length);
+        RequestSendMsg(pair.first, data, length);
     }
 }
 
@@ -520,19 +521,19 @@ void CIOCPServer::CommandProcessThread()
 {
     while (_running)
     {
-        NetworkCommand cmd(NetworkCommand::Type::SEND_PACKET, -1);
+        NetworkCommand cmd(NetworkCommand::Type::SEND_MSG, -1);
         if (_commandQueue.TryPop(cmd))
         {
             switch (cmd.type)
             {
-            case NetworkCommand::Type::SEND_PACKET:
-                RequestSendPacket(cmd.sessionId, cmd.data.data(), static_cast<int>(cmd.data.size()));
+            case NetworkCommand::Type::SEND_MSG:
+                RequestSendMsg(cmd.sessionId, cmd.data.data(), static_cast<int>(cmd.data.size()));
                 break;
             case NetworkCommand::Type::DISCONNECT_SESSION:
                 RequestDisconnectSession(cmd.sessionId);
                 break;
-            case NetworkCommand::Type::BROADCAST_PACKET:
-                RequestBroadcastPacket(cmd.data.data(), static_cast<int>(cmd.data.size()));
+            case NetworkCommand::Type::BROADCAST_MSG:
+                RequestBroadcastMsg(cmd.data.data(), static_cast<int>(cmd.data.size()));
                 break;
             }
         }
@@ -550,7 +551,7 @@ void CIOCPServer::OnClientConnected(int64_t sessionId)
 {
     // 기본 동작: 에코 테스트용 환영 메시지
     std::string welcomeMsg = "Welcome! (Direct mode)";
-    RequestSendPacket(sessionId, welcomeMsg.c_str(), static_cast<int>(welcomeMsg.size()));
+    RequestSendMsg(sessionId, welcomeMsg.c_str(), static_cast<int>(welcomeMsg.size()));
 }
 
 void CIOCPServer::OnClientDisconnected(int64_t sessionId)
@@ -561,5 +562,5 @@ void CIOCPServer::OnClientDisconnected(int64_t sessionId)
 void CIOCPServer::OnDataReceived(int64_t sessionId, const char* data, size_t length)
 {
     // 기본 동작: 에코백
-    RequestSendPacket(sessionId, data, static_cast<int>(length));
+    RequestSendMsg(sessionId, data, static_cast<int>(length));
 }

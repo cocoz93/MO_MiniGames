@@ -1,0 +1,27 @@
+# --- [컴파일 및 빌드 결과물] ---
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bin/
+obj/
+*.exe
+*.pdb
+*.ilk
+*.aps
+
+# --- [비주얼 스튜디오 자동 생성 파일] ---
+.vs/
+*.suo
+*.user
+*.sln.docstates
+*.db
+*.opendb
+
+# --- [코파일럿 및 기타 캐시] ---
+.copilot-chat/
+.vscode/
+
+# --- [기타 임시 파일] ---
+*.log
+*.tmp

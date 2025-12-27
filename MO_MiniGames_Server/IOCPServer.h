@@ -102,9 +102,9 @@ struct NetworkCommand
 {
     enum class Type
     {
-        SEND_PACKET,
+        SEND_MSG,
         DISCONNECT_SESSION,
-        BROADCAST_PACKET
+        BROADCAST_MSG
     };
 
     Type type;
@@ -174,9 +174,9 @@ public:
     void Disconnect();
 
     // 게임 로직 레이어가 사용할 인터페이스
-    void RequestSendPacket(int64_t sessionId, const char* data, int length);
+    void RequestSendMsg(int64_t sessionId, const char* data, int length);
     void RequestDisconnectSession(int64_t sessionId);
-    void RequestBroadcastPacket(const char* data, int length);
+    void RequestBroadcastMsg(const char* data, int length);
 
     // 게임 로직 레이어로 전달할 이벤트 가져오기 (QUEUE_BASED 모드용)
     bool PopNetworkEvent(NetworkEvent& event);
