@@ -49,7 +49,7 @@ struct MSG_S2C_ROOM_LIST
     // RoomInfo rooms[roomCount]; // 가변 배열
 };
 
-// C2S: 방 생성 요청
+// C2S: 방 생성 요청 (최신화 요청 등)
 struct MSG_C2S_CREATE_ROOM
 {
     MsgHeader header;

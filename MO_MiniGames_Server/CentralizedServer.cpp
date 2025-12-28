@@ -86,6 +86,9 @@ void CCentralizedServer::DispatchClientConnected(int64_t sessionId)
     // 게임 컨텐츠 레이어의 플레이어 객체 생성
     auto player = std::make_shared<CPlayer>(sessionId);
     AddPlayer(player);
+
+    // 클라이언트가 접속하면 즉시 방 목록 전송
+    SendRoomList(player);
 }
 
 void CCentralizedServer::DispatchClientDisconnected(int64_t sessionId)

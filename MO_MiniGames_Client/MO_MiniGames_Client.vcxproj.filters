@@ -17,17 +17,16 @@
   <ItemGroup>
     <ClCompile Include="mainClient.cpp">
       <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="GameClient.h">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="GameClient.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Protocol.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
+    <ClInclude Include="ClientNetwork.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="CONTRIBUTING.md" />
   </ItemGroup>
 </Project>

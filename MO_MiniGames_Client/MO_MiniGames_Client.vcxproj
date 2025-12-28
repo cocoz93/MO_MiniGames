@@ -123,12 +123,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="GameClient.cpp" />
-    <ClCompile Include="GameClient.h" />
+    <ClCompile Include="ClientNetwork.cpp" />
+    <ClCompile Include="GameInstance.cpp" />
     <ClCompile Include="mainClient.cpp" />
+    <ClCompile Include="Room.cpp" />
+    <ClCompile Include="Tetris.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ClientNetwork.h" />
+    <ClInclude Include="GameInstance.h" />
     <ClInclude Include="Protocol.h" />
+    <ClInclude Include="Room.h" />
+    <ClInclude Include="Tetris.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="CONTRIBUTING.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
