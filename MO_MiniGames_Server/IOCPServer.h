@@ -11,10 +11,16 @@
 #include <unordered_map>
 #include <queue>
 #include <functional>
+#include <stack>
+#include <array>
+
+#include "RingBuffer.h"
+#include "Protocol.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
-constexpr int BUFFER_SIZE = 4096;
+constexpr size_t MAX_PACKET_SIZE = 65536;  // ìµœëŒ€ íŒ¨í‚· í¬ê¸° (64KB)
+constexpr size_t MIN_PACKET_SIZE = sizeof(MsgHeader);  // ìµœì†Œ íŒ¨í‚· í¬ê¸°
 
 enum class IOOperation
 {
@@ -23,56 +29,68 @@ enum class IOOperation
     ACCEPT
 };
 
-// ¼­¹ö ¾ÆÅ°ÅØÃ³ Å¸ÀÔ
+// ì„œë²„ ì•„í‚¤í…ì²˜ íƒ€ì…
 enum class ServerArchitectureType
 {
-    Centralized,    // Áß¾Ó ÁıÁßÇü - º°µµ ½º·¹µå¿¡¼­ ÀÌº¥Æ® Ã³¸®
-    Partitioned,    // ºĞ»êÇü - ¿©·¯ ½º·¹µå/Å¥·Î ºĞ¸® Ã³¸®
-    UnifiedStrand   // ÅëÇÕ ½ºÆ®·£µå - IOCP ¿öÄ¿°¡ °ÔÀÓ ·ÎÁ÷±îÁö Á÷Á¢ Ã³¸®
-};
-
-struct OverlappedEx
-{
-    OVERLAPPED overlapped;
-    WSABUF wsaBuf;
-    char buffer[BUFFER_SIZE];
-    IOOperation operation;
-
-    OverlappedEx()
-        : operation(IOOperation::RECV)
-    {
-        ZeroMemory(&overlapped, sizeof(OVERLAPPED));
-        ZeroMemory(buffer, BUFFER_SIZE);
-        wsaBuf.buf = buffer;
-        wsaBuf.len = BUFFER_SIZE;
-    }
+    EchoTest,       // ì—ì½” í…ŒìŠ¤íŠ¸ìš© (ìµœì†Œ ê¸°ëŠ¥)
+    Centralized,    // ì¤‘ì•™ ì§‘ì¤‘í˜• - ë³„ë„ ìŠ¤ë ˆë“œì—ì„œ ì´ë²¤íŠ¸ ì²˜ë¦¬
+    Partitioned,    // ë¶„ì‚°í˜• - ì—¬ëŸ¬ ìŠ¤ë ˆë“œ/íë¡œ ë¶„ë¦¬ ì²˜ë¦¬
+    UnifiedStrand   // í†µí•© ìŠ¤íŠ¸ëœë“œ - IOCP ì›Œì»¤ê°€ ê²Œì„ ë¡œì§ê¹Œì§€ ì§ì ‘ ì²˜ë¦¬
 };
 
 class CSession
 {
 public:
-    explicit CSession(SOCKET socket, int64_t sessionId);
+    // ë‚´ë¶€ I/O ê´€ë¦¬ìš© í™•ì¥ OVERLAPPED êµ¬ì¡°ì²´
+    struct OverlappedEx
+    {
+        OVERLAPPED overlapped;      // ë°˜ë“œì‹œ ì²« ë²ˆì§¸ ë©¤ë²„
+        int64_t sessionId;          // I/O ìš”ì²­ ì‹œì ì˜ ì„¸ì…˜ID (ABA ë°©ì§€)
+        IOOperation operation;      // I/O íƒ€ì… (RECV, SEND, ACCEPT ë“±)
+    };
+
+    explicit CSession();
     virtual ~CSession();
 
-    SOCKET GetSocket() const;
-    int64_t GetSessionId() const;
-    bool IsConnected() const;
-    void SetConnected(bool connected);
-
-    OverlappedEx* GetRecvOverlapped();
-    OverlappedEx* GetSendOverlapped();
-
+    void Initialize(SOCKET socket, int64_t sessionId);
     void Close();
 
-private:
+    // SessionID êµ¬ì¡° í—¬í¼ (static ë©¤ë²„ë¡œ ì´ë™)
+    static constexpr int SESSION_INDEX_BITS = 16;
+    static constexpr int64_t SESSION_INDEX_MASK = 0xFFFF000000000000LL;
+    static constexpr int64_t SESSION_UNIQUE_MASK = 0x0000FFFFFFFFFFFFLL;
+
+    static uint16_t ExtractIndex(int64_t sessionId)
+    {
+        return static_cast<uint16_t>((sessionId >> 48) & 0xFFFF);
+    }
+
+    static int64_t ExtractUniqueId(int64_t sessionId)
+    {
+        return sessionId & SESSION_UNIQUE_MASK;
+    }
+
+    static int64_t MakeSessionId(uint16_t index, int64_t uniqueId)
+    {
+        return (static_cast<int64_t>(index) << 48) | (uniqueId & SESSION_UNIQUE_MASK);
+    }
+
+    // ë³€ê²½: ì—°ê²° ìƒíƒœ í™•ì¸ í•¨ìˆ˜
+
+public: 
     SOCKET _socket;
     int64_t _sessionId;
-    std::atomic<bool> _connected;
+    std::atomic<bool> _valid; // ìœ íš¨ì„±
+    std::atomic<bool> _sending; // ì†¡ì‹  ì¤‘ í”Œë˜ê·¸
+
+    CRingBufferST _recvQ; // í•œ ìŠ¤ë ˆë“œì—ì„œë§Œ ì ‘ê·¼
+    CRingBufferST _sendQ; // ë‹¤ì¤‘ ìŠ¤ë ˆë“œì—ì„œ ì ‘ê·¼
+
     OverlappedEx _recvOverlapped;
     OverlappedEx _sendOverlapped;
 };
 
-// °ÔÀÓ ·ÎÁ÷ ·¹ÀÌ¾î·Î Àü´ŞÇÒ ³×Æ®¿öÅ© ÀÌº¥Æ®
+// ê²Œì„ ë¡œì§ ë ˆì´ì–´ë¡œ ì „ë‹¬í•  ë„¤íŠ¸ì›Œí¬ ì´ë²¤íŠ¸
 struct NetworkEvent
 {
     enum class Type
@@ -97,14 +115,13 @@ struct NetworkEvent
     }
 };
 
-// °ÔÀÓ ·ÎÁ÷¿¡¼­ ³×Æ®¿öÅ© ·¹ÀÌ¾î·Î º¸³¾ ¸í·É
+// ê²Œì„ ë¡œì§ì—ì„œ ë„¤íŠ¸ì›Œí¬ ë ˆì´ì–´ë¡œ ë³´ë‚¼ ëª…ë ¹
 struct NetworkCommand
 {
     enum class Type
     {
         SEND_MSG,
         DISCONNECT_SESSION,
-        BROADCAST_MSG
     };
 
     Type type;
@@ -121,14 +138,14 @@ struct NetworkCommand
     {
     }
 
-    // Broadcast¿ë
+    // Broadcastìš©
     NetworkCommand(Type t, const char* buffer, size_t length)
         : type(t), sessionId(-1), data(buffer, buffer + length)
     {
     }
 };
 
-// ½º·¹µå ¾ÈÀüÇÑ Å¥
+// ìŠ¤ë ˆë“œ ì•ˆì „í•œ í
 template<typename T>
 class ThreadSafeQueue
 {
@@ -162,71 +179,80 @@ private:
     mutable std::mutex _mutex;
 };
 
-// ³×Æ®¿öÅ© I/O Ã³¸® ·¹ÀÌ¾î
+//TODO: ì•„í‚¤í…ì³ë³„ ì„¤ê³„..
+
+// ë„¤íŠ¸ì›Œí¬ I/O ì²˜ë¦¬ ë ˆì´ì–´
 class CIOCPServer
 {
 public:
-    explicit CIOCPServer(int port, int maxClients, ServerArchitectureType type = ServerArchitectureType::Centralized);
+    explicit CIOCPServer(int port, int maxClients, ServerArchitectureType type);
     virtual ~CIOCPServer();
 
-    bool Initialize();
-    void Start();
+    bool Start();
     void Disconnect();
 
-    // °ÔÀÓ ·ÎÁ÷ ·¹ÀÌ¾î°¡ »ç¿ëÇÒ ÀÎÅÍÆäÀÌ½º
+    // ê²Œì„ ë¡œì§ ë ˆì´ì–´ê°€ ì‚¬ìš©í•  ì¸í„°í˜ì´ìŠ¤ (ì§ì ‘ í˜¸ì¶œ)
+    // thread-safeí•˜ë‹¤ë©´ êµ³ì´ íë°©ì‹ìœ¼ë¡œ ë¶€í•˜ë¥¼ ì¤„ í•„ìš”ê°€ ì—†ìŒ.
     void RequestSendMsg(int64_t sessionId, const char* data, int length);
-    void RequestDisconnectSession(int64_t sessionId);
-    void RequestBroadcastMsg(const char* data, int length);
+    bool RequestDisconnectSession(int64_t sessionId);
 
-    // °ÔÀÓ ·ÎÁ÷ ·¹ÀÌ¾î·Î Àü´ŞÇÒ ÀÌº¥Æ® °¡Á®¿À±â (QUEUE_BASED ¸ğµå¿ë)
+    // ê²Œì„ ë¡œì§ ë ˆì´ì–´ë¡œ ì „ë‹¬í•  ì´ë²¤íŠ¸ ê°€ì ¸ì˜¤ê¸° (QUEUE_BASED ëª¨ë“œìš©)
     bool PopNetworkEvent(NetworkEvent& event);
 
-    // Ã³¸® ¹æ½Ä Å¸ÀÔ °¡Á®¿À±â
+    // ì²˜ë¦¬ ë°©ì‹ íƒ€ì… ê°€ì ¸ì˜¤ê¸°
     ServerArchitectureType GetArchitectureType() const;
 
+    // ë‚´ë¶€ì—ì„œ ì‚¬ìš©í•  í•¨ìˆ˜
+private:
+    bool DisconnectSessionInternal(CSession* session);
+
 protected:
-    // ´ÙÀÌ·ºÆ® ¸ğµå¿ë(UnifiedStrand) - ÇÏÀ§ Å¬·¡½º¿¡¼­ ¿À¹ö¶óÀÌµå
-    virtual void OnClientConnected(int64_t sessionId);
-    virtual void OnClientDisconnected(int64_t sessionId);
-    virtual void OnDataReceived(int64_t sessionId, const char* data, size_t length);
+    // ë‹¤ì´ë ‰íŠ¸ ëª¨ë“œìš©(UnifiedStrand) - í•˜ìœ„ í´ë˜ìŠ¤ì—ì„œ ì˜¤ë²„ë¼ì´ë“œ
+    //virtual void OnClientConnected(int64_t sessionId);
+    //virtual void OnClientDisconnected(int64_t sessionId);
+    //virtual void OnDataReceived(int64_t sessionId, const char* data, size_t length);
 
 private:
-    // °ÔÀÓ ·ÎÁ÷À¸·Î ÀÌº¥Æ® Àü´Ş (QUEUE_BASED ¸ğµå¿ë)
+
+    void EchoTestSend(CSession* session, const char* data, size_t length);
+    // ê²Œì„ ë¡œì§ìœ¼ë¡œ ì´ë²¤íŠ¸ ì „ë‹¬ (QUEUE_BASED ëª¨ë“œìš©)
     void PushNetworkEvent(NetworkEvent&& event);
 
-    void WorkerThread();
     void AcceptThread();
-    void CommandProcessThread();
+    void WorkerThread();
 
     bool CreateListenSocket();
+    bool SetSocketOptions(SOCKET socket);
     bool BindIOCP(SOCKET socket, ULONG_PTR completionKey);
+    void ReleaseSession();
 
     void ProcessAccept(SOCKET clientSocket);
     void ProcessRecv(CSession* session, DWORD bytesTransferred);
     void ProcessSend(CSession* session, DWORD bytesTransferred);
 
-    std::shared_ptr<CSession> GetSession(int64_t sessionId);
-    void AddSession(std::shared_ptr<CSession> session);
-    void RemoveSession(int64_t sessionId);
+    void PostRecv(CSession* session);
+    void PostSend(CSession* session); // ì†¡ì‹  ìš”ì²­ í•¨ìˆ˜ ì¶”ê°€
+    void ParsePackets(CSession* session);
+
+    CSession* FindSession(int64_t sessionId);
 
 private:
     int _port;
     int _maxClients;
     ServerArchitectureType _architectureType;
     std::atomic<bool> _running;
-    std::atomic<int64_t> _sessionIdCounter;
+    std::atomic<int64_t> _sessionIdCounter;  // ê³ ìœ  IDìš© (í•˜ìœ„ 48ë¹„íŠ¸)
 
     SOCKET _listenSocket;
     HANDLE _iocpHandle;
 
     std::vector<std::thread> _workerThreads;
     std::thread _acceptThread;
-    std::thread _commandThread;
 
-    std::unordered_map<int64_t, std::shared_ptr<CSession>> _sessions;
-    std::mutex _sessionMutex;
+    std::vector<std::unique_ptr<CSession>> _sessions;  // Index ê¸°ë°˜ ì ‘ê·¼ê°€ëŠ¥
+    std::queue<uint16_t> _availableIndices;  // ì¬ì‚¬ìš© ê°€ëŠ¥í•œ ì¸ë±ìŠ¤ í
+    std::stack<uint64_t> _pendingDisconStack; // ì¢…ë£Œ ëŒ€ê¸° ì¤‘ì¸ ì„¸ì…˜ID ìŠ¤íƒ
 
-    // ·¹ÀÌ¾î °£ Åë½Å Å¥ (QUEUE_BASED ¸ğµå¿ë)
-    ThreadSafeQueue<NetworkEvent> _eventQueue;    // ³×Æ®¿öÅ© -> °ÔÀÓ ·ÎÁ÷
-    ThreadSafeQueue<NetworkCommand> _commandQueue; // °ÔÀÓ ·ÎÁ÷ -> ³×Æ®¿öÅ©
+    // ë ˆì´ì–´ ê°„ í†µì‹  í (QUEUE_BASED ëª¨ë“œìš©)
+    ThreadSafeQueue<NetworkEvent> _eventQueue;    // ë„¤íŠ¸ì›Œí¬ -> ê²Œì„ ë¡œì§
 };

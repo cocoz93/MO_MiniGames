@@ -123,7 +123,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="CentralizedServer.cpp" />
+    <ClCompile Include="CentralizedServer.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="IOCPServer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Player.cpp" />
@@ -131,15 +133,15 @@
     <ClCompile Include="RoomManager.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CentralizedServer.h" />
+    <ClInclude Include="CentralizedServer.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="IOCPServer.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Protocol.h" />
+    <ClInclude Include="RingBuffer.h" />
     <ClInclude Include="Room.h" />
     <ClInclude Include="RoomManager.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\CONTRIBUTING.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

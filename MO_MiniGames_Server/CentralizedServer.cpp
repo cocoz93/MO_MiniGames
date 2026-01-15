@@ -10,11 +10,6 @@ CCentralizedServer::CCentralizedServer(int port, int maxClients, int mainlogicTi
     , _running(false)
     , _mainlogicTickMs(mainlogicTickMs)
 {
-    if (!_networkServer->Initialize())
-    {
-        std::cerr << "[CentralizedServer] Failed to initialize network server" << std::endl;
-        throw std::runtime_error("Network server initialization failed");
-    }
 }
 
 CCentralizedServer::~CCentralizedServer()
@@ -23,10 +18,12 @@ CCentralizedServer::~CCentralizedServer()
     _networkServer->Disconnect();
 }
 
-void CCentralizedServer::Start()
+bool CCentralizedServer::Start()
 {
     _running = true;
-    _networkServer->Start();
+    if (!_networkServer->Start())
+        return false;
+
     _gameThread = std::thread(&CCentralizedServer::GameLogicThread, this);
     std::cout << "[CentralizedServer] Game logic thread started" << std::endl;
 }
@@ -52,7 +49,7 @@ void CCentralizedServer::GameLogicThread()
 {
     while (_running)
     {
-        // ³×Æ®¿öÅ© ÀÌº¥Æ® Ã³¸®
+        // ë„¤íŠ¸ì›Œí¬ ì´ë²¤íŠ¸ ì²˜ë¦¬
         NetworkEvent event(NetworkEvent::Type::CONNECTED, -1);
         while (_networkServer->PopNetworkEvent(event))
         {
@@ -70,10 +67,10 @@ void CCentralizedServer::GameLogicThread()
             }
         }
 
-        // °ÔÀÓ ·ÎÁ÷ Ã³¸®
+        // ê²Œì„ ë¡œì§ ì²˜ë¦¬
         ProcessGameLogic();
 
-        // CPU ºÎÇÏ ¹æÁö
+        // CPU ë¶€í•˜ ë°©ì§€
         if (_mainlogicTickMs >= 0)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(_mainlogicTickMs));
@@ -83,17 +80,17 @@ void CCentralizedServer::GameLogicThread()
 
 void CCentralizedServer::DispatchClientConnected(int64_t sessionId)
 {
-    // °ÔÀÓ ÄÁÅÙÃ÷ ·¹ÀÌ¾îÀÇ ÇÃ·¹ÀÌ¾î °´Ã¼ »ı¼º
+    // ê²Œì„ ì»¨í…ì¸  ë ˆì´ì–´ì˜ í”Œë ˆì´ì–´ ê°ì²´ ìƒì„±
     auto player = std::make_shared<CPlayer>(sessionId);
     AddPlayer(player);
 
-    // Å¬¶óÀÌ¾ğÆ®°¡ Á¢¼ÓÇÏ¸é Áï½Ã ¹æ ¸ñ·Ï Àü¼Û
+    // í´ë¼ì´ì–¸íŠ¸ê°€ ì ‘ì†í•˜ë©´ ì¦‰ì‹œ ë°© ëª©ë¡ ì „ì†¡
     SendRoomList(player);
 }
 
 void CCentralizedServer::DispatchClientDisconnected(int64_t sessionId)
 {
-    // ÇÃ·¹ÀÌ¾î °´Ã¼ Á¶È¸
+    // í”Œë ˆì´ì–´ ê°ì²´ ì¡°íšŒ
     auto player = GetPlayer(sessionId);
     if (!player)
     {
@@ -101,16 +98,16 @@ void CCentralizedServer::DispatchClientDisconnected(int64_t sessionId)
         return;
     }
 
-    // ÇÃ·¹ÀÌ¾î°¡ ¼ÓÇÑ ¹æ¿¡¼­ ÅğÀå Ã³¸® (CPlayer ±â¹İ)
+    // í”Œë ˆì´ì–´ê°€ ì†í•œ ë°©ì—ì„œ í‡´ì¥ ì²˜ë¦¬ (CPlayer ê¸°ë°˜)
     _roomManager->LeaveRoom(player);
 
-    // <SessionId, _players> ¸Ê¿¡¼­ ÇÃ·¹ÀÌ¾î Á¦°Å
+    // <SessionId, _players> ë§µì—ì„œ í”Œë ˆì´ì–´ ì œê±°
     RemovePlayer(sessionId);
 }
 
 void CCentralizedServer::DispatchDataReceived(int64_t sessionId, const char* data, size_t length)
 {
-    // ÇÃ·¹ÀÌ¾î °´Ã¼ Á¶È¸
+    // í”Œë ˆì´ì–´ ê°ì²´ ì¡°íšŒ
     auto player = GetPlayer(sessionId);
     if (!player)
     {
@@ -126,14 +123,14 @@ void CCentralizedServer::DispatchDataReceived(int64_t sessionId, const char* dat
 
     const MsgHeader* header = reinterpret_cast<const MsgHeader*>(data);
 
-    // ÆĞÅ¶ Å©±â °ËÁõ
+    // íŒ¨í‚· í¬ê¸° ê²€ì¦
     if (header->size != length)
     {
         std::cerr << "[CentralizedServer] Msg size mismatch from SessionId: " << sessionId << std::endl;
         return;
     }
 
-    // ÆĞÅ¶ Å¸ÀÔº° Ã³¸® (ÇÃ·¹ÀÌ¾î ±â¹İ)
+    // íŒ¨í‚· íƒ€ì…ë³„ ì²˜ë¦¬ (í”Œë ˆì´ì–´ ê¸°ë°˜)
     switch (header->type)
     {
     case MsgType::C2S_REQUEST_ROOM_LIST:
@@ -178,7 +175,7 @@ void CCentralizedServer::HandleCreateRoom(std::shared_ptr<CPlayer> player, const
     std::string title(msg->title);
     int32_t maxPlayers = msg->maxPlayers;
 
-    // À¯È¿¼º °ËÁõ
+    // ìœ íš¨ì„± ê²€ì¦
     if (title.empty() || maxPlayers < 2 || maxPlayers > 10)
     {
         SendRoomCreated(player, -1, false);
@@ -186,8 +183,8 @@ void CCentralizedServer::HandleCreateRoom(std::shared_ptr<CPlayer> player, const
         return;
     }
 
-    // ¹æ ÀÌ¸§ Áßº¹ Ã¼Å©
-    // Â÷ÈÄ ½ºÆ®¸µÀ» ´øÁú°Ô ¾Æ´Ï¶ó ¸Ş½ÃÁö·Î »©´Â ¹æ½ÄÀ¸·Î º¯°æ ÇÏ¸é ÁÁÀ» µí
+    // ë°© ì´ë¦„ ì¤‘ë³µ ì²´í¬
+    // ì°¨í›„ ìŠ¤íŠ¸ë§ì„ ë˜ì§ˆê²Œ ì•„ë‹ˆë¼ ë©”ì‹œì§€ë¡œ ë¹¼ëŠ” ë°©ì‹ìœ¼ë¡œ ë³€ê²½ í•˜ë©´ ì¢‹ì„ ë“¯
     if (_roomManager->FindRoomByTitle(title))
     {
         SendRoomCreated(player, -1, false);
@@ -198,7 +195,7 @@ void CCentralizedServer::HandleCreateRoom(std::shared_ptr<CPlayer> player, const
     auto room = _roomManager->CreateRoom(title, maxPlayers);
     if (room)
     {
-        // ¹æ »ı¼º ¼º°ø ½Ã, Áï½Ã ÀÔÀå Ã³¸® (CPlayer ±â¹İ)
+        // ë°© ìƒì„± ì„±ê³µ ì‹œ, ì¦‰ì‹œ ì…ì¥ ì²˜ë¦¬ (CPlayer ê¸°ë°˜)
         bool joinSuccess = _roomManager->JoinRoom(room->GetRoomId(), player);
         SendRoomCreated(player, room->GetRoomId(), joinSuccess);
 
@@ -207,7 +204,7 @@ void CCentralizedServer::HandleCreateRoom(std::shared_ptr<CPlayer> player, const
             SendError(player, "Failed to join created room");
         }
     }
-    else // ¹æ »ı¼º ½ÇÆĞ  
+    else // ë°© ìƒì„± ì‹¤íŒ¨  
     {
         SendRoomCreated(player, -1, false);
     }
@@ -217,7 +214,7 @@ void CCentralizedServer::HandleJoinRoom(std::shared_ptr<CPlayer> player, const M
 {
     int32_t roomId = msg->roomId;
 
-    // CPlayer ±â¹İÀ¸·Î RoomManager¿¡ Àü´Ş
+    // CPlayer ê¸°ë°˜ìœ¼ë¡œ RoomManagerì— ì „ë‹¬
     bool success = _roomManager->JoinRoom(roomId, player);
     SendRoomJoined(player, roomId, success);
 
@@ -229,7 +226,7 @@ void CCentralizedServer::HandleJoinRoom(std::shared_ptr<CPlayer> player, const M
 
 void CCentralizedServer::HandleLeaveRoom(std::shared_ptr<CPlayer> player)
 {
-    // CPlayer ±â¹İÀ¸·Î RoomManager¿¡ Àü´Ş
+    // CPlayer ê¸°ë°˜ìœ¼ë¡œ RoomManagerì— ì „ë‹¬
     bool success = _roomManager->LeaveRoom(player);
     SendRoomLeft(player, success);
 }
@@ -239,7 +236,7 @@ void CCentralizedServer::SendRoomList(std::shared_ptr<CPlayer> player)
     auto roomList = _roomManager->GetRoomList();
     int32_t roomCount = static_cast<int32_t>(roomList.size());
 
-    // °¡º¯ ±æÀÌ ÆĞÅ¶ »ı¼º
+    // ê°€ë³€ ê¸¸ì´ íŒ¨í‚· ìƒì„±
     size_t msgSize = sizeof(MSG_S2C_ROOM_LIST) + sizeof(RoomInfo) * roomCount;
     std::vector<char> buffer(msgSize);
 
@@ -248,7 +245,7 @@ void CCentralizedServer::SendRoomList(std::shared_ptr<CPlayer> player)
     msg->header.type = MsgType::S2C_ROOM_LIST;
     msg->roomCount = roomCount;
 
-    // ¹æ Á¤º¸ Ã¤¿ì±â
+    // ë°© ì •ë³´ ì±„ìš°ê¸°
     RoomInfo* roomInfoArray = reinterpret_cast<RoomInfo*>(buffer.data() + sizeof(MSG_S2C_ROOM_LIST));
     int index = 0;
     for (const auto& room : roomList)
@@ -310,8 +307,8 @@ void CCentralizedServer::SendError(std::shared_ptr<CPlayer> player, const std::s
 
 void CCentralizedServer::ProcessGameLogic()
 {
-    // ÁÖ±âÀûÀÎ °ÔÀÓ ·ÎÁ÷ Ã³¸®
-    // ¿¹: °ÔÀÓ Å¸ÀÌ¸Ó, »óÅÂ ¾÷µ¥ÀÌÆ® µî
+    // ì£¼ê¸°ì ì¸ ê²Œì„ ë¡œì§ ì²˜ë¦¬
+    // ì˜ˆ: ê²Œì„ íƒ€ì´ë¨¸, ìƒíƒœ ì—…ë°ì´íŠ¸ ë“±
 }
 
 std::shared_ptr<CPlayer> CCentralizedServer::GetPlayer(int64_t sessionId)

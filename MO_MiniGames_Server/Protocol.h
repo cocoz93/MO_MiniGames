@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// ÆĞÅ¶ Å¸ÀÔ (È¥¿ë ¹æÁö¸¦ À§ÇØ L7 Msg·Î Ç¥±â)
+// íŒ¨í‚· íƒ€ì… (í˜¼ìš© ë°©ì§€ë¥¼ ìœ„í•´ L7 Msgë¡œ í‘œê¸°)
 enum class MsgType : uint16_t
 {
 	// C2S: Client to Server
@@ -23,15 +23,15 @@ enum class MsgType : uint16_t
     S2C_ERROR
 };
 
-// ÆĞÅ¶ Çì´õ (¸ğµç ÆĞÅ¶ °øÅë)
+// íŒ¨í‚· í—¤ë” (ëª¨ë“  íŒ¨í‚· ê³µí†µ)
 #pragma pack(push, 1)
 struct MsgHeader
 {
-    uint16_t size;        // ÆĞÅ¶ ÀüÃ¼ Å©±â (Çì´õ Æ÷ÇÔ)
-    MsgType type;      // ÆĞÅ¶ Å¸ÀÔ
+    uint16_t size;        // íŒ¨í‚· ì „ì²´ í¬ê¸° (í—¤ë” í¬í•¨)
+    //MsgType type;         // íŒ¨í‚· íƒ€ì…
 };
 
-// ¹æ Á¤º¸ (¸ñ·Ï¿ë)
+// ë°© ì •ë³´ (ëª©ë¡ìš©)
 struct RoomInfo
 {
     int32_t roomId;
@@ -41,15 +41,15 @@ struct RoomInfo
     uint8_t status; // 0: WAITING, 1: PLAYING
 };
 
-// S2C: ¹æ ¸ñ·Ï ÀÀ´ä (°¡º¯ ±æÀÌ)
+// S2C: ë°© ëª©ë¡ ì‘ë‹µ (ê°€ë³€ ê¸¸ì´)
 struct MSG_S2C_ROOM_LIST
 {
     MsgHeader header;
     int32_t roomCount;
-    // RoomInfo rooms[roomCount]; // °¡º¯ ¹è¿­
+    // RoomInfo rooms[roomCount]; // ê°€ë³€ ë°°ì—´
 };
 
-// C2S: ¹æ »ı¼º ¿äÃ» (ÃÖ½ÅÈ­ ¿äÃ» µî)
+// C2S: ë°© ìƒì„± ìš”ì²­ (ìµœì‹ í™” ìš”ì²­ ë“±)
 struct MSG_C2S_CREATE_ROOM
 {
     MsgHeader header;
@@ -57,22 +57,22 @@ struct MSG_C2S_CREATE_ROOM
     int32_t maxPlayers;
 };
 
-// S2C: ¹æ »ı¼º ÀÀ´ä
+// S2C: ë°© ìƒì„± ì‘ë‹µ
 struct MSG_S2C_ROOM_CREATED
 {
     MsgHeader header;
     int32_t roomId;
-    uint8_t success; // 0: ½ÇÆĞ, 1: ¼º°ø
+    uint8_t success; // 0: ì‹¤íŒ¨, 1: ì„±ê³µ
 };
 
-// C2S: ¹æ ÀÔÀå ¿äÃ»
+// C2S: ë°© ì…ì¥ ìš”ì²­
 struct MSG_C2S_JOIN_ROOM
 {
     MsgHeader header;
     int32_t roomId;
 };
 
-// S2C: ¹æ ÀÔÀå ÀÀ´ä
+// S2C: ë°© ì…ì¥ ì‘ë‹µ
 struct MSG_S2C_ROOM_JOINED
 {
     MsgHeader header;
@@ -80,20 +80,20 @@ struct MSG_S2C_ROOM_JOINED
     uint8_t success;
 };
 
-// C2S: ¹æ ÅğÀå ¿äÃ»
+// C2S: ë°© í‡´ì¥ ìš”ì²­
 struct MSG_C2S_LEAVE_ROOM
 {
     MsgHeader header;
 };
 
-// S2C: ¹æ ÅğÀå ÀÀ´ä
+// S2C: ë°© í‡´ì¥ ì‘ë‹µ
 struct MSG_S2C_ROOM_LEFT
 {
     MsgHeader header;
     uint8_t success;
 };
 
-// S2C: ¿¡·¯ ÀÀ´ä
+// S2C: ì—ëŸ¬ ì‘ë‹µ
 struct MSG_S2C_ERROR
 {
     MsgHeader header;

@@ -13,7 +13,8 @@ std::atomic<bool> running{true};
 std::mutex mtx;
 std::condition_variable cv;
 
-// ÇÁ·Î¼¼½º ÀüÃ¼ Á¾·á ÄÁÆ®·Ñ·¯ÀÌ¹Ç·Î ¸ŞÀÎ¹®¿¡ »©µĞ´Ù
+// TODO : ì´ê±¸ ì´ë ‡ê²Œ ë¹¼ë‘ëŠ”ê²Œ ë§ì„ê¹Œ
+// í”„ë¡œì„¸ìŠ¤ ì „ì²´ ì¢…ë£Œ ì»¨íŠ¸ë¡¤ëŸ¬ì´ë¯€ë¡œ ë©”ì¸ë¬¸ì— ë¹¼ë‘”ë‹¤
 void SignalProcessShutdown()
 {
     running = false;
@@ -22,27 +23,27 @@ void SignalProcessShutdown()
 
 int main()
 {
-    constexpr int PORT = 9000;
+    constexpr int PORT = 6000;
     constexpr int MAX_CLIENTS = 1000;
 
     std::cout << "=== IOCP Mini Game Server ===" << std::endl;
     std::cout << "Port: " << PORT << std::endl; 
     std::cout << "Max Clients: " << MAX_CLIENTS << std::endl;
 
-    // Áß¾Ó ÁıÁßÇü °ÔÀÓ ¼­¹ö¸¸ »ı¼º (³»ºÎ¿¡¼­ ³×Æ®¿öÅ© ·¹ÀÌ¾î ÀÚµ¿ »ı¼º)
-    auto gameServer = std::make_unique<CCentralizedServer>(PORT, MAX_CLIENTS);
+    // ì¤‘ì•™ ì§‘ì¤‘í˜• ê²Œì„ ì„œë²„ë§Œ ìƒì„± (ë‚´ë¶€ì—ì„œ ë„¤íŠ¸ì›Œí¬ ë ˆì´ì–´ ìë™ ìƒì„±)
+    auto gameServer = std::make_unique<CIOCPServer>(PORT, MAX_CLIENTS, ServerArchitectureType::EchoTest);
 
-    // ¼­¹ö ½ÃÀÛ
+    // ì„œë²„ ì‹œì‘
     gameServer->Start();
 
-    // main ½º·¹µå´Â condition_variable·Î ´ë±â
+    // main ìŠ¤ë ˆë“œëŠ” condition_variableë¡œ ëŒ€ê¸°
     {
         std::unique_lock<std::mutex> lock(mtx);
         cv.wait(lock, [&] { return !running; });
     }
 
-    // ¼­¹ö Á¾·á
-    gameServer->Stop();
+    // ì„œë²„ ì¢…ë£Œ
+    gameServer->Disconnect();
 
     std::cout << "Server shutdown complete" << std::endl;
     return 0;

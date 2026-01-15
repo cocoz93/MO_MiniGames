@@ -10,32 +10,32 @@
 #include <chrono>
 #include <unordered_map>
 
-// Áß¾Ó ÁıÁßÇü °ÔÀÓ ·ÎÁ÷ ·¹ÀÌ¾î - º°µµ ½º·¹µå¿¡¼­ µ¿ÀÛ
+// ì¤‘ì•™ ì§‘ì¤‘í˜• ê²Œì„ ë¡œì§ ë ˆì´ì–´ - ë³„ë„ ìŠ¤ë ˆë“œì—ì„œ ë™ì‘
 class CCentralizedServer
 {
 public:
     explicit CCentralizedServer(int port, int maxClients, int mainlogicTickMs = -1);
     virtual ~CCentralizedServer();
 
-    void Start();
+    bool Start();
     void Stop();
 
 private:
     void GameLogicThread();
 
-    // ³×Æ®¿öÅ© ÀÌº¥Æ® Ã³¸® //////////////////////////////////////////////////////////
+    // ë„¤íŠ¸ì›Œí¬ ì´ë²¤íŠ¸ ì²˜ë¦¬ //////////////////////////////////////////////////////////
     void DispatchClientConnected(int64_t sessionId);
     void DispatchClientDisconnected(int64_t sessionId);
     void DispatchDataReceived(int64_t sessionId, const char* data, size_t length);
     ////////////////////////////////////////////////////////////////////////////////
 
-    // ÆĞÅ¶ ÇÚµé·¯ (CPlayer ±â¹İ)
+    // íŒ¨í‚· í•¸ë“¤ëŸ¬ (CPlayer ê¸°ë°˜)
     void HandleRequestRoomList(std::shared_ptr<CPlayer> player);
     void HandleCreateRoom(std::shared_ptr<CPlayer> player, const MSG_C2S_CREATE_ROOM* msg);
     void HandleJoinRoom(std::shared_ptr<CPlayer> player, const MSG_C2S_JOIN_ROOM* msg);
     void HandleLeaveRoom(std::shared_ptr<CPlayer> player);
 
-    // ÆĞÅ¶ Àü¼Û ÇïÆÛ
+    // íŒ¨í‚· ì „ì†¡ í—¬í¼
     void SendRoomList(std::shared_ptr<CPlayer> player);
     void SendRoomCreated(std::shared_ptr<CPlayer> player, int32_t roomId, bool success);
     void SendRoomJoined(std::shared_ptr<CPlayer> player, int32_t roomId, bool success);
@@ -44,7 +44,7 @@ private:
 
     void ProcessGameLogic();
 
-    // ÇÃ·¹ÀÌ¾î °ü¸®
+    // í”Œë ˆì´ì–´ ê´€ë¦¬
     std::shared_ptr<CPlayer> GetPlayer(int64_t sessionId);
     void AddPlayer(std::shared_ptr<CPlayer> player);
     void RemovePlayer(int64_t sessionId);
@@ -56,6 +56,6 @@ private:
     std::atomic<bool> _running;
     int _mainlogicTickMs;
 
-    // ÇÃ·¹ÀÌ¾î °ü¸® (sessionId -> Player)
+    // í”Œë ˆì´ì–´ ê´€ë¦¬ (sessionId -> Player)
     std::unordered_map<int64_t, std::shared_ptr<CPlayer>> _players;
 };
