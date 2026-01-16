@@ -598,8 +598,6 @@ void CIOCPServer::ParsePackets(CSession* session)
 }
 
 // Send 완료 통지 처리
-// TODO : Send쪽 플래그, 사이즈체크등의 처리 제대로하고있는지 확인.
-// 프로카데미 프로젝트 및 노션쪽 메모 확인할 것
 void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
 {
     if (!session || !session->_valid.load())
@@ -617,17 +615,59 @@ void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
         return;
     }
 
-    // TODO : 송신처리가 끝나고 false로 바꾸려는 찰나,
-    // 다른쪽에서 Enqueue하고 Send하려고했는데 true인걸보고 빠짐
-    // 그리고 false로 바꾸면 영원히 데이터가 남아있게 됨...
-    // 근데 그래도 에코서버에서는 계속 데이터가 송수신되니까 다 보내지않나?
-    // 그리고, 지금은 이쪽구문으로만 계속 돌텐데... 혹시 PostSend에서 포인터쪽 잘못된거 아닌지확인ㄴ
-    // 완료통지 처리후, 보낼데이터가 있으면 계속 송신
-    // 결국, GetUseSize와 _sending플래그를 섞어쓰지말고 하나로 통일하는게 좋을 듯.
-    // TODO 2
-    // 추가로, SendQ가 스레드세이프한지 확인을 해볼 것.. (제대로 락걸고 있는지)
+    // ★ 수정: 남은 데이터 확인 후 연속 송신 또는 플래그 해제
+    auto sendInfo = session->_sendQ.GetSendInfo();
+    
+    if (sendInfo.dataSize > 0)
+    {
+        // 남은 데이터가 있으면 _sending = true 유지한 채 바로 WSASend
+        ZeroMemory(&session->_sendOverlapped.overlapped, sizeof(OVERLAPPED));
+        session->_sendOverlapped.sessionId = session->_sessionId;
+        session->_sendOverlapped.operation = IOOperation::SEND;
+
+        WSABUF wsaBuf[2];
+        int bufCount = 0;
+
+        if (sendInfo.directReadSize > 0)
+        {
+            wsaBuf[bufCount].buf = sendInfo.readPtr;
+            wsaBuf[bufCount].len = static_cast<ULONG>(sendInfo.directReadSize);
+            bufCount++;
+
+            if (sendInfo.dataSize > sendInfo.directReadSize)
+            {
+                size_t wrapSize = sendInfo.dataSize - sendInfo.directReadSize;
+                wsaBuf[bufCount].buf = session->_sendQ._buffer;
+                wsaBuf[bufCount].len = static_cast<ULONG>(wrapSize);
+                bufCount++;
+            }
+        }
+
+        if (bufCount > 0)
+        {
+            DWORD sendBytes = 0;
+            int result = WSASend(session->_socket, wsaBuf, bufCount, &sendBytes, 0,
+                &session->_sendOverlapped.overlapped, NULL);
+
+            if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+            {
+                std::cerr << "[Error] WSASend failed: " << WSAGetLastError()
+                          << " - SessionId: " << session->_sessionId << std::endl;
+                session->_sending.store(false);
+                DisconnectSessionInternal(session);
+            }
+            return;
+        }
+    }
+
+    // 보낼 데이터가 없을 때만 플래그 해제
     session->_sending.store(false);
-    PostSend(session);
+    
+    // ★ Double-check: 플래그 해제 직후 다시 확인 (다른 스레드가 Enqueue했을 수 있음)
+    if (session->_sendQ.GetDataSize() > 0)
+    {
+        PostSend(session);
+    }
 }
 
 // Send는 1회로 제한
@@ -637,22 +677,15 @@ void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
 void CIOCPServer::PostSend(CSession* session)
 {
     if (!session || !session->_valid.load())
-    {
-        // 종종 발생 가능
-        // sending 변경 필요 X
         return;
-    }
 
-    // 송신 중 플래그 설정
-    // 반드시 사이즈 체크 전에 플래그 변경해야함
-    // https://www.notion.so/IOCP-2e216a0b9f5980718fbbe6d70d9d537f?source=copy_link#2e216a0b9f59800aa6aec17de07935fc
     if (true == session->_sending.exchange(true))
-    {
         return;
-    }
 
-    size_t dataSize = session->_sendQ.GetDataSize();
-    if (dataSize == 0)
+    // ★ 한 번의 락으로 일관된 상태 획득
+    auto sendInfo = session->_sendQ.GetSendInfo();
+    
+    if (sendInfo.dataSize == 0)
     {
         session->_sending.store(false);
         return;
@@ -662,25 +695,18 @@ void CIOCPServer::PostSend(CSession* session)
     session->_sendOverlapped.sessionId = session->_sessionId;
     session->_sendOverlapped.operation = IOOperation::SEND;
 
-    char* readPtr = session->_sendQ.GetReadPtr();
-    size_t directReadSize = session->_sendQ.GetDirectReadSize();
-
-    // 지역 WSABUF 배열 선언
     WSABUF wsaBuf[2];
     int bufCount = 0;
 
-    // 첫 번째 버퍼: 읽기 포인터부터 버퍼 끝까지 (또는 데이터 끝까지)
-    if (directReadSize > 0)
+    if (sendInfo.directReadSize > 0)
     {
-        wsaBuf[bufCount].buf = readPtr;
-        wsaBuf[bufCount].len = static_cast<ULONG>(directReadSize);
+        wsaBuf[bufCount].buf = sendInfo.readPtr;
+        wsaBuf[bufCount].len = static_cast<ULONG>(sendInfo.directReadSize);
         bufCount++;
 
-        // 두 번째 버퍼: 버퍼가 랩(wrap)되어 남은 데이터가 있는 경우
-        if (dataSize > directReadSize)
+        if (sendInfo.dataSize > sendInfo.directReadSize)
         {
-            size_t wrapSize = dataSize - directReadSize;
-            // 링버퍼의 시작 위치부터 남은 데이터 크기만큼
+            size_t wrapSize = sendInfo.dataSize - sendInfo.directReadSize;
             wsaBuf[bufCount].buf = session->_sendQ._buffer;
             wsaBuf[bufCount].len = static_cast<ULONG>(wrapSize);
             bufCount++;
@@ -702,10 +728,10 @@ void CIOCPServer::PostSend(CSession* session)
 
     if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
     {
-        std::cerr << "[Error] WSASend failed: " << WSAGetLastError() << " - SessionId: " << session->_sessionId << std::endl;
+        std::cerr << "[Error] WSASend failed: " << WSAGetLastError() 
+                  << " - SessionId: " << session->_sessionId << std::endl;
         session->_sending.store(false);
         DisconnectSessionInternal(session);
-        return;
     }
 }
 

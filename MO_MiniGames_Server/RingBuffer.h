@@ -538,6 +538,32 @@ public:
         return result;
     }
 
+    // 모든 함수는 lock으로 보호되지만, 여러개의 함수를 호출했을때
+    // 일관성이 보장되지는 않는다. 따라서 새로운 구조체 추가
+    // https://www.notion.so/IOCP-2e216a0b9f5980718fbbe6d70d9d537f?source=copy_link#2ea16a0b9f59802896ede8f1a5da8a8c
+    struct SendInfo
+    {
+        char* readPtr;
+        size_t dataSize;
+        size_t directReadSize;
+    };
+
+    SendInfo GetSendInfo()
+    {
+        _lock.lock();
+        SendInfo info;
+        info.readPtr = _buffer + _readPos;
+        info.dataSize = GetDataSize_Internal();
+        
+        if (_writePos >= _readPos)
+            info.directReadSize = _writePos - _readPos;
+        else
+            info.directReadSize = _capacity - _readPos;
+        
+        _lock.unlock();
+        return info;
+    }
+
 public:
     char* _buffer;
     size_t _capacity;

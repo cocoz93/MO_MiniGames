@@ -84,7 +84,7 @@ public:
     std::atomic<bool> _sending; // 송신 중 플래그
 
     CRingBufferST _recvQ; // 한 스레드에서만 접근
-    CRingBufferST _sendQ; // 다중 스레드에서 접근
+    CRingBufferMT _sendQ; // 다중 스레드에서 접근
 
     OverlappedEx _recvOverlapped;
     OverlappedEx _sendOverlapped;
