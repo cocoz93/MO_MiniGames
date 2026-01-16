@@ -663,7 +663,8 @@ void CIOCPServer::ProcessSend(CSession* session, DWORD bytesTransferred)
     // 보낼 데이터가 없을 때만 플래그 해제
     session->_sending.store(false);
     
-    // ★ Double-check: 플래그 해제 직후 다시 확인 (다른 스레드가 Enqueue했을 수 있음)
+    // Double-check: 플래그 해제 직후 다시 확인 (다른 스레드가 Enqueue했을 수 있음)
+    // https://www.notion.so/IOCP-2e216a0b9f5980718fbbe6d70d9d537f?source=copy_link#2e216a0b9f5980259bece18c0876edf8
     if (session->_sendQ.GetDataSize() > 0)
     {
         PostSend(session);
@@ -679,6 +680,9 @@ void CIOCPServer::PostSend(CSession* session)
     if (!session || !session->_valid.load())
         return;
 
+
+    // 사이즈 체크보다 플래그 변경처리가 우선되어야 함
+    https://www.notion.so/IOCP-2e216a0b9f5980718fbbe6d70d9d537f?source=copy_link#2e216a0b9f5980e0bff1d298912f7b60
     if (true == session->_sending.exchange(true))
         return;
 
@@ -723,6 +727,12 @@ void CIOCPServer::PostSend(CSession* session)
     }
 
     DWORD sendBytes = 0;
+    if (wsaBuf[0].len == 0 && wsaBuf[1].len == 0)
+    {
+        session->_sending.store(false);
+        return;
+    }
+
     int result = WSASend(session->_socket, wsaBuf, bufCount, &sendBytes, 0,
         &session->_sendOverlapped.overlapped, NULL);
 
